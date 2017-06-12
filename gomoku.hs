@@ -29,7 +29,7 @@ instance Show Board where
 mapSize = 5
 
 createBoard :: Board
-createBoard = Board $ replicate mapSize $ replicate mapSize Empty
+createBoard = Board $ (replicate mapSize . replicate mapSize) Empty
 
 printBoard :: Board -> String
 printBoard (Board []) = ('\n' :) $ take mapSize ['A'..]
@@ -48,19 +48,25 @@ putStone inters (x,y) (Board board) =
 
 generateMoves :: Intersection -> Board -> Tree.Tree Board
 generateMoves inters board
-  = Tree.Node board $ (generateMoves . oppositeColor $ inters) `map` possibleMoves allCoords
+  = Tree.Node board $ (generateMoves . oppositeColor $ inters) `map` possibleMoves
   where
-    possibleMoves :: [Coords] -> [Board]
-    possibleMoves [] = []
-    possibleMoves (c:xs)
-      | isEmpty c board = (putStone inters c board) : (possibleMoves xs)
-      | otherwise = possibleMoves xs
+    possibleMoves :: [Board]
+    possibleMoves = map (\c -> putStone inters c board) (emptyCoords board)
+
+nonEmptyCoords :: Board -> [Coords]
+nonEmptyCoords b = filter (`isNotEmpty` b) allCoords
+
+emptyCoords :: Board -> [Coords]
+emptyCoords b = filter (`isEmpty` b) allCoords
 
 allCoords :: [Coords]
 allCoords = [(x,y)| x <- [0..(mapSize-1)], y <- [0..mapSize-1]]
 
 isEmpty :: Coords -> Board -> Bool
 isEmpty coords board = Empty == getIntersection coords board
+
+isNotEmpty :: Coords -> Board -> Bool
+isNotEmpty coords board = Empty /= getIntersection coords board
 
 getIntersection :: Coords -> Board -> Intersection
 getIntersection (x,y) (Board board) = (board !! y) !! x
@@ -71,10 +77,9 @@ getISafe (x,y) board
   | otherwise = getIntersection (x,y) board
 
 oppositeColor :: Intersection -> Intersection
-oppositeColor inters
-  | inters == Black = White
-  | inters == White = Black
-  | otherwise = Empty
+oppositeColor Black = White
+oppositeColor White = Black
+oppositeColor _ = Empty
 
 assessBoard :: Intersection -> Board -> Int
 assessBoard i b = points i - points (oppositeColor i)
@@ -84,44 +89,41 @@ assessBoard i b = points i - points (oppositeColor i)
 
 -- wybieram tylko te kamienie, które mają z jakiejś strony sąsiada, a z przeciwnej nie mają
 startPoints :: Intersection -> Board -> [(Coords,Direction)]
-startPoints inters board = getStartPoints inters allCoords board
+startPoints inters board = getStartPoints allCoords
   where
-    getStartPoints :: Intersection -> [Coords] -> Board -> [(Coords,Direction)]
-    getStartPoints _ [] _ = []
-    getStartPoints inters (c:xs) board
-      | getIntersection c board == inters = (getLineStarts inters c board) ++ (getStartPoints inters xs board)
-      | otherwise = getStartPoints inters xs board
+    getStartPoints :: [Coords] -> [(Coords,Direction)]
+    getStartPoints [] = []
+    getStartPoints (c:xs)
+      | getIntersection c board == inters = (getLineStarts inters c board) ++ (getStartPoints xs)
+      | otherwise = getStartPoints xs
 
 getLineStarts :: Intersection -> Coords -> Board -> [(Coords,Direction)]
-getLineStarts i (x,y) board = getStart [l,d,r,u] RU $ getStart [l,y,r,y] R $ getStart [l,u,r,d] RD $ getStart [x,u,x,d] D []
+getLineStarts i (x,y) board = foldr getStart [] [(l,d,r,u,RU), (l,y,r,y,R), (l,u,r,d,RD), (x,u,x,d,D)]
   where
     l = x - 1
     r = x + 1
     u = y - 1
     d = y + 1
-    getStart :: [Int] -> Direction -> [(Coords,Direction)] -> [(Coords,Direction)]
-    getStart [x1,y1,x2,y2] dir list
+    getStart :: (Int,Int,Int,Int,Direction) -> [(Coords,Direction)] -> [(Coords,Direction)]
+    getStart (x1,y1,x2,y2,dir) list
       | (getISafe (x1,y1) board /= i) && (getISafe (x2,y2) board == i) = ((x,y),dir) : list
       | otherwise = list
-
-nextX :: Int -> Direction -> Int
-nextX x dir
-  | dir /= D = x + 1
-  | otherwise = x
-
-nextY :: Int -> Direction -> Int
-nextY y dir
-  | dir == RU = y - 1
-  | dir == R = y
-  | otherwise = y + 1
 
 lineLength :: (Coords,Direction) -> Board -> Int
 lineLength (coords@(x,y),dir) b
   | getISafe (newX,newY) b == getIntersection coords b = (lineLength ((newX,newY),dir) b) + 1
   | otherwise = 1
   where
-    newX = nextX x dir
-    newY = nextY y dir
+    newX :: Int
+    newX 
+      | dir == D = x
+      | otherwise = x + 1
+
+    newY :: Int
+    newY
+      | dir == RU = y - 1
+      | dir == R = y
+      | otherwise = y + 1
 
 points4Line :: Int -> Int
 points4Line length
@@ -132,9 +134,9 @@ points4Line length
   | otherwise = 1
 
 points4Coords :: Coords -> Int
-points4Coords (x,y) = round $ maxDistance - (distanceToCenter x y) -- 13, bo distanceToCenter moze najwiecej wyjsc ~12.73, więc wychodzi zakres punktów ~[0; 13]
+points4Coords (x,y) = round $ maxDistance - (distanceToCenter x y)
   where
-    distanceToCenter a b = sqrt $ fromIntegral $ (a-mapCenter)^2 + (b-mapCenter)^2
+    distanceToCenter a b = sqrt . fromIntegral $ (a-mapCenter)^2 + (b-mapCenter)^2
     maxDistance = distanceToCenter 0 0
     mapCenter = div (mapSize-1) 2
 
@@ -142,39 +144,24 @@ points4Neighbors :: Coords -> Board -> Int
 points4Neighbors c b = 2 * countNeighbors c b
 
 countNeighbors :: Coords -> Board -> Int
-countNeighbors c@(x,y) board = countIt coords
+countNeighbors c@(x,y) board = sum $ map isTheSame coords
   where
     inters = getISafe c board
-    coords = [(x-1,y-1),(x,y-1),(x+1,y-1),(x-1,y),(x+1,y),(x-1,y+1),(x,y+1),(x+1,y+1)]
-    countIt :: [Coords] -> Int
-    countIt [] = 0
-    countIt (x:xs)
-      | getISafe x board == inters = 1 + countIt xs
-      | otherwise = countIt xs
+    coords = [(_x,_y)| _x <- [x-1..x+1], _y <- [y-1..y+1], (_x,_y) /= (x,y)]
+    isTheSame :: Coords -> Int
+    isTheSame x
+      | getISafe x board == inters = 1
+      | otherwise = 0
 
 points4AllCoordsAndNeighbors :: Intersection -> Board -> Int
-points4AllCoordsAndNeighbors inter b = points4AllCoords coords + points4AllNeighbors coords b
+points4AllCoordsAndNeighbors inter b = (sum $ map points4Coords coords) + (sum $ map (`points4Neighbors` b) coords)
   where
-    coords = filterCoords allCoords
-    filterCoords :: [Coords] -> [Coords]
-    filterCoords [] = []
-    filterCoords (x:xs)
-      | getISafe x b == inter = x : filterCoords xs
-      | otherwise = filterCoords xs
-
-points4AllCoords :: [Coords] -> Int
-points4AllCoords [] = 0
-points4AllCoords (x:xs) = points4Coords x + points4AllCoords xs
-
-points4AllNeighbors :: [Coords] -> Board -> Int
-points4AllNeighbors [] _ = 0
-points4AllNeighbors (x:xs) b = points4Neighbors x b + points4AllNeighbors xs b
+    coords = filter (\x -> getIntersection x b == inter) allCoords
 
 points4AllLines :: Intersection -> Board -> Int
-points4AllLines inter board = sum pointsForEachLength
+points4AllLines inter board = sum $ map points4Line allLengths
   where
     allLengths = map (`lineLength` board) (startPoints inter board)
-    pointsForEachLength = map points4Line allLengths
 
 -- funkcja wybierająca następny ruch danego gracza
 chooseNext :: Intersection -> Board -> Board
@@ -200,4 +187,4 @@ chooseNext inter b
     getMax :: Tree.Tree Board -> Int -> Int
     getMax (Tree.Node node _) 0 = assessBoard inter node
     getMax (Tree.Node _ subNodes) level
-      = maximum $ map (`getMax` (level - 1)) subNodes -- można zamienić sum na maximum (zależy czy szukam jednego najlepszego node'a czy grupy node'ow dających wieksze szanse na lepsza dalsza gre)
+      = sum $ map (`getMax` (level - 1)) subNodes -- maximum can be changed to sum
