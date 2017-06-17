@@ -1,5 +1,6 @@
-import Data.Tree as Tree
+import Data.Tree
 import Data.List
+import Data.Char
 
 data Intersection
   = Black
@@ -47,15 +48,15 @@ putStone inters (x,y) (Board board) =
       (i,j) = splitAt x (head b)
   in Board $ a ++ [i ++ [inters] ++ (tail j)] ++ (tail b)
 
-generateMoves :: Intersection -> Board -> Tree.Tree Board
+generateMoves :: Intersection -> Board -> Tree Board
 generateMoves inters board
-  = Tree.Node board $ (generateMoves . oppositeColor $ inters) `map` possibleMoves
+  = Node board $ (generateMoves . oppositeColor $ inters) `map` possibleMoves
   where
     possibleMoves :: [Board]
     possibleMoves = map (\c -> putStone inters c board) (emptyCoords board)
 
 nonEmptyCoords :: Board -> [Coords]
-nonEmptyCoords b = filter (`isNotEmpty` b) allCoords
+nonEmptyCoords b = filter (not . (`isEmpty` b)) allCoords
 
 emptyCoords :: Board -> [Coords]
 emptyCoords b = filter (`isEmpty` b) allCoords
@@ -65,9 +66,6 @@ allCoords = [(x,y)| x <- [0..(mapSize-1)], y <- [0..mapSize-1]]
 
 isEmpty :: Coords -> Board -> Bool
 isEmpty coords board = Empty == getIntersection coords board
-
-isNotEmpty :: Coords -> Board -> Bool
-isNotEmpty coords board = Empty /= getIntersection coords board
 
 getIntersection :: Coords -> Board -> Intersection
 getIntersection (x,y) (Board board) = (board !! y) !! x
@@ -111,30 +109,32 @@ getLineStarts i c@(x,y) board = foldr getStart [] [((l,d),(r,u),RU), ((l,y),(r,y
       | otherwise = list
 
 lineLength :: (Coords,Direction) -> Board -> Int
-lineLength (coords,dir) b = countLength $ newCoords coords
+lineLength (coords,dir) b = lineLen (nextCoords dir) coords
   where
     myInter = getIntersection coords b
-    newCoords = newCoordsPattern dir
 
-    countLength :: Coords -> Int
-    countLength c
-      | (getISafe c b) == myInter = (+1) $ countLength $ newCoords c
-      | otherwise = 1
+    myColorCoords :: [Coords]
+    myColorCoords = filter ((== myInter) . (`getIntersection` b)) allCoords
 
-    newCoordsPattern :: Direction -> Coords -> Coords
-    newCoordsPattern RU = \(x,y) -> (x+1,y-1)
-    newCoordsPattern R = \(x,y) -> (x+1,y)
-    newCoordsPattern RD = \(x,y) -> (x+1,y+1)
-    newCoordsPattern D = \(x,y) -> (x,y+1)
+    lineLen :: (Coords -> Coords) -> Coords -> Int
+    lineLen newC c 
+      | elem c myColorCoords = 1 + lineLen newC (newC c)
+      | otherwise = 0
+
+nextCoords :: Direction -> Coords -> Coords
+nextCoords RU = \(x,y) -> (x+1,y-1)
+nextCoords R = \(x,y) -> (x+1,y)
+nextCoords RD = \(x,y) -> (x+1,y+1)
+nextCoords D = \(x,y) -> (x,y+1)
 
 
 points4Line :: Int -> Int
 points4Line length
   | length < 3 = 0
-  | length == 3 = 6
-  | length == 4 = 10
+  | length == 3 = 50
+  | length == 4 = 100
   | length == 5 = 100000
-  | otherwise = 1
+  | otherwise = -100000
 
 points4Coords :: Coords -> Int
 points4Coords (x,y) = round $ maxDistance - (distanceToCenter x y)
@@ -166,107 +166,48 @@ points4AllLines inter board = sum $ map points4Line allLengths
   where
     allLengths = map (`lineLength` board) (startPoints inter board)
 
--- funkcja wybierająca następny ruch danego gracza
--- chooseNext :: Intersection -> Board -> Board
--- chooseNext inter b
---   = getNode $ (possibilities (generateMoves inter b)) !! (maybeToNormal indexOfMax)
---   where
---     getNode :: Tree.Tree Board -> Board
---     getNode (Tree.Node node _) = node
-
---     possibilities :: Tree.Tree Board -> [Tree.Tree Board]
---     possibilities (Tree.Node _ subNodes) = subNodes
-
---     maybeToNormal :: Maybe Int -> Int
---     maybeToNormal (Just x) = x
---     maybeToNormal Nothing = -1
-
---     indexOfMax :: Maybe Int
---     indexOfMax = elemIndex (maximum (maxList (generateMoves inter b))) (maxList (generateMoves inter b))
-    
---     maxList :: Tree.Tree Board -> [Int]
---     maxList (Tree.Node _ subNodes) = map (`getMax` searchDepth) subNodes
-
---     getMax :: Tree.Tree Board -> Int -> Int
---     getMax (Tree.Node node _) 0 = assessBoard inter node
---     getMax (Tree.Node _ subNodes) level
---       = sum $ map (`getMax` (level - 1)) subNodes -- maximum can be changed to sum
-
 chooseNext :: Intersection -> Board -> Board
 chooseNext inter b
-  = getNode $ (possibilities moves) !! (maybeToNormal indexOfMax)
+  = (\(Node n _) -> n) $ moves !! indexOfMax
   where
-    getNode :: Tree.Tree Board -> Board
-    getNode (Tree.Node node _) = node
-
-    possibilities :: Tree.Tree Board -> [Tree.Tree Board]
-    possibilities (Tree.Node _ subNodes) = subNodes
-
-    maybeToNormal :: Maybe Int -> Int
-    maybeToNormal (Just x) = x
-    maybeToNormal Nothing = -1
-
-    indexOfMax :: Maybe Int
-    indexOfMax = elemIndex (maximum maxSubNodes) maxSubNodes
-
-    maxSubNodes = maxList moves
-    moves = generateMoves inter b
+    indexOfMax :: Int
+    indexOfMax = (\(Just i) -> i) $ elemIndex (maximum maxList) maxList
     
-    maxList :: Tree.Tree Board -> [Int]
-    maxList (Tree.Node _ subNodes) = map (\x -> alfabeta x (searchDepth-1) (-999999999) 999999999) subNodes
+    maxList :: [Int]
+    maxList = map (\x -> alfabeta x (searchDepth-1) (-999999999) 999999999) moves
 
-    alfabeta :: Tree.Tree Board -> Int -> Int -> Int -> Int
-    alfabeta (Tree.Node node []) _ _ _ = assessBoard inter node
-    alfabeta (Tree.Node node _) 0 _ _ = assessBoard inter node
-    alfabeta (Tree.Node _ subNodes) depth alpha beta
-      | (searchDepth-depth) `mod` 2 == 0 = findMin subNodes beta
+    moves :: [Tree Board]
+    moves = (\(Node _ s) -> s) $ generateMoves inter b
+
+    alfabeta :: Tree Board -> Int -> Int -> Int -> Int
+    alfabeta (Node node []) _ _ _ = assessBoard inter node
+    alfabeta (Node node _) 0 _ _ = assessBoard inter node
+    alfabeta (Node _ subNodes) depth alpha beta
+      | (searchDepth-depth) `mod` 2 /= 0 = findMin subNodes beta
       | otherwise = findMax subNodes alpha
       where
-        findMax :: [Tree.Tree Board] -> Int -> Int
+        findMax :: [Tree Board] -> Int -> Int
         findMax [] a = a
         findMax (x:xs) a
           | newAlpha >= beta = beta
           | otherwise = findMax xs newAlpha
           where
-            newAlpha = max (nextStep x) a
+            newAlpha = max (alfabeta x (depth-1) a beta) a
 
-        findMin :: [Tree.Tree Board] -> Int -> Int
+        findMin :: [Tree Board] -> Int -> Int
         findMin [] b = b
         findMin (x:xs) b
           | newBeta <= alpha = alpha
           | otherwise = findMin xs newBeta
           where
-            newBeta = min (nextStep x) b
-
-        nextStep = \x -> alfabeta x (depth-1) alpha beta
-
--- chooseNext :: Intersection -> Board -> Board
--- chooseNext inter board
---   = alfabeta board searchDepth -999999999 999999999 inter
---   where
---     alfabeta :: Tree.Tree Board -> Int -> Int -> Int -> Intersection -> Int
---     alfabeta (Tree.Node node []) _ _ _ i = assessBoard i node
---     alfabeta (Tree.Node node _) 0 _ _ i = assessBoard i node
---     alfabeta (Tree.Node _ subNodes) depth alpha beta i
---       | i == inter = findMax subNodes alpha
---       | otherwise = findMin subNodes beta
---       where
---         findMax :: [Tree.Tree Board] -> Int -> Int
---         findMax [] a = a
---         findMax (x:xs) a
---           | max (nextStep x) a >= beta = beta
---           | otherwise = findMax xs a
-
---         findMin :: [Tree.Tree Board] -> Int -> Int
---         findMin [] b = b
---         findMin (x:xs) b
---           | min (nextStep x) b <= alpha = alpha
---           | otherwise = findMin xs b
-
---         nextStep = \x -> alfabeta x (depth-1) alpha beta (oppositeColor i)
+            newBeta = min (alfabeta x (depth-1) alpha b) b
 
 takeX :: String -> Int
-takeX str = (\(Just x) -> x) $ elemIndex (str !! 0) ['A'..]
+takeX str = toInt $ elemIndex (toUpper $ str !! 0) ['A'..]
+  where
+    toInt :: Maybe Int -> Int
+    toInt (Just x) = x
+    toInt Nothing = -1
 
 takeY :: String -> Int
 takeY str = (1 `subtract`) $ read $ tail str
@@ -277,7 +218,25 @@ isTheEnd inter board = elem 5 $ map (`lineLength` board) (startPoints inter boar
 play1 board = do
   putStrLn "Podaj współrzędne (np. F7):"
   coords <- getLine
-  _b <- return $ putStone White (takeX coords, takeY coords) board
+  x <- return $ takeX coords
+  y <- return $ takeY coords
+  if False == (elem (x,y) allCoords)
+    then do
+      putStrLn "Niepoprawne współrzędne!"
+      play1 board
+    else do
+      checkIntersection (x,y) board
+
+checkIntersection coords board = do
+  if getIntersection coords board /= Empty
+    then do
+      putStrLn "To pole jest już zajęte. Wybierz inne."
+      play1 board
+    else do
+      insertNewStone coords board
+
+insertNewStone coords board = do
+  _b <- return $ putStone White coords board
   putStrLn $ show _b
   if isTheEnd White _b
     then do

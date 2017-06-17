@@ -1,6 +1,6 @@
 Gomoku
 ======
-Gomoku game written in Haskell programming language.
+Console game written in Haskell programming language.
 
 To compile:
 ```
