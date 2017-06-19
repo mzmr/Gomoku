@@ -94,16 +94,14 @@ startPoints i b = foldr getStarts [] filtered
     getStarts = (++) . (\x -> getLineStarts i x b)
 
 getLineStarts :: Intersection -> Coords -> Board -> [(Coords,Direction)]
-getLineStarts i c@(x,y) board = foldr getStart [] [((l,d),(r,u),RU), ((l,y),(r,y),R), ((l,u),(r,d),RD), ((x,u),(x,d),D)]
+getLineStarts i c@(x,y) board = map (\(_,_,dir) -> (c,dir)) correctList
   where
+    correctList = filter (\(c1,c2,_) -> (getISafe c1 board /= i) && (getISafe c2 board == i)) toCheck
+    toCheck = [((l,d),(r,u),RU), ((l,y),(r,y),R), ((l,u),(r,d),RD), ((x,u),(x,d),D)]
     l = x - 1
     r = x + 1
     u = y - 1
     d = y + 1
-    getStart :: (Coords,Coords,Direction) -> [(Coords,Direction)] -> [(Coords,Direction)]
-    getStart (c1,c2,dir) list
-      | (getISafe c1 board /= i) && (getISafe c2 board == i) = (c,dir) : list
-      | otherwise = list
 
 lineLength :: (Coords,Direction) -> Board -> Int
 lineLength (coords,dir) b = lineLen (nextCoords dir) coords
