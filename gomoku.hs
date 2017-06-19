@@ -33,14 +33,14 @@ searchDepth = 2 :: Int
 createBoard :: Board
 createBoard = Board $ (replicate mapSize . replicate mapSize) Empty
 
--- printBoard :: Board -> String
+printBoard :: Board -> String
 printBoard (Board []) = ('\n' :) $ take mapSize ['A'..]
 printBoard (Board b@(x:xs))
   = (x >>= show) ++ "  " ++ show (mapSize - length b + 1) ++ "\n" ++ printBoard (Board xs)
 
 -- ten printBoard ladniejszy, ale bez numerowanych wierszy i kolumn
 -- printBoard :: Board -> String
--- printBoard (Board b) = (unlines . map (concatMap ((' ':) . show))) b
+-- printBoard = unlines . (map (concatMap ((' ':) . show))) . (\(Board b) -> b)
 
 putStone :: Intersection -> Coords -> Board -> Board
 putStone inters (x,y) (Board board) =
@@ -50,7 +50,7 @@ putStone inters (x,y) (Board board) =
 
 generateMoves :: Intersection -> Board -> Tree Board
 generateMoves inters board
-  = Node board $ (generateMoves . oppositeColor $ inters) `map` possibleMoves
+  = Node board $ (generateMoves (oppositeColor inters)) `map` possibleMoves
   where
     possibleMoves :: [Board]
     possibleMoves = map (\c -> putStone inters c board) (emptyCoords board)
@@ -71,9 +71,9 @@ getIntersection :: Coords -> Board -> Intersection
 getIntersection (x,y) (Board board) = (board !! y) !! x
 
 getISafe :: Coords -> Board -> Intersection
-getISafe (x,y) board
+getISafe c@(x,y) board
   | x < 0 || x > (mapSize-1) || y < 0 || y > (mapSize-1) = Empty
-  | otherwise = getIntersection (x,y) board
+  | otherwise = getIntersection c board
 
 oppositeColor :: Intersection -> Intersection
 oppositeColor Black = White
@@ -84,17 +84,14 @@ assessBoard :: Intersection -> Board -> Int
 assessBoard i b = points i - points (oppositeColor i)
   where
     points :: Intersection -> Int
-    points x = points4AllCoordsAndNeighbors x b + points4AllLines x b
+    points inter = points4AllCoordsAndNeighbors inter b + points4AllLines inter b
 
 -- wybieram tylko te kamienie, które mają z jakiejś strony sąsiada, a z przeciwnej nie mają
 startPoints :: Intersection -> Board -> [(Coords,Direction)]
-startPoints inters board = getStartPoints allCoords
+startPoints i b = foldr getStarts [] filtered
   where
-    getStartPoints :: [Coords] -> [(Coords,Direction)]
-    getStartPoints [] = []
-    getStartPoints (c:xs)
-      | getIntersection c board == inters = (getLineStarts inters c board) ++ (getStartPoints xs)
-      | otherwise = getStartPoints xs
+    filtered = filter (\c -> getIntersection c b == i) allCoords
+    getStarts = (++) . (\x -> getLineStarts i x b)
 
 getLineStarts :: Intersection -> Coords -> Board -> [(Coords,Direction)]
 getLineStarts i c@(x,y) board = foldr getStart [] [((l,d),(r,u),RU), ((l,y),(r,y),R), ((l,u),(r,d),RD), ((x,u),(x,d),D)]
